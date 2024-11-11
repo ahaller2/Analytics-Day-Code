@@ -1,0 +1,831 @@
+# R CODE FOR ANALYTICS DAY - MLB INJURY PROJECT
+# REFERENCES - FANGRAPHScom : Transactional Data, Injury List Data, Player Statistics
+
+# Packages
+library(readxl)
+library(dplyr)
+library(rstatix)
+library(car)
+library(ggplot2)
+library(reshape2)
+library(pROC)
+library(psych)
+
+# Turn off scientific notation 
+options(scipen = 999)
+
+##### 2021 Season - Just Players with 1 Team #####
+# data
+one_team_21 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project/One_Team_21.xlsx")
+
+# Taking out obs with IL_Retro_Date after end of Regular Season
+one_team_21$IL_Retro_Date <- as.Date(one_team_21$IL_Retro_Date)
+one_team_21 <- one_team_21 %>%
+  filter(IL_Retro_Date <= as.Date("2021-10-03"))
+
+# Creating start data variable
+one_team_21$IL_Retro_Date <- as.Date(one_team_21$IL_Retro_Date)
+one_team_21 <- one_team_21 %>%
+  mutate(start_date = if_else(IL_Retro_Date >= as.Date("2021-04-01"), 
+                              IL_Retro_Date, 
+                              as.Date("2021-04-01")))
+
+one_team_21$Return_Date <- as.Date(one_team_21$Return_Date)
+one_team_21 <- one_team_21 %>%
+  mutate(end_date = if_else(is.na(Return_Date) | Return_Date > as.Date("2021-10-03"), 
+                            as.Date("2021-10-04"), 
+                            Return_Date))
+
+# Creating days injured variable
+one_team_21 <- one_team_21 %>%
+  mutate(
+    days_injured = as.integer(end_date - start_date)
+  )
+
+# Creating Spring Training Variables
+# ST start date
+one_team_21 <- one_team_21 %>%
+  mutate(st_start_date = if_else(IL_Retro_Date >= as.Date("2021-02-28"), 
+                              IL_Retro_Date, 
+                              as.Date("2021-02-28")))
+
+# ST end date
+one_team_21 <- one_team_21 %>%
+  mutate(st_end_date = if_else(is.na(Return_Date) | Return_Date > as.Date("2021-03-30"), 
+                            as.Date("2021-03-31"), 
+                            Return_Date))
+
+# Days injured during spring training
+one_team_21 <- one_team_21 %>%
+  mutate(
+    st_days_injured = as.integer(st_end_date - st_start_date)
+  )
+
+# turning negative numbers to 0 for days injured
+one_team_21 <- one_team_21 %>%
+  mutate(st_days_injured = ifelse(st_days_injured < 0, 0, st_days_injured))
+
+# Condensing to just 1 obs per player and keeping just Name, Team, Pos, Season, Switched_Teams, days_injured
+# days_injured added together
+combined_data_21 <- one_team_21 %>%
+  group_by(Name, Team) %>%
+  summarise(
+    Pos = first(Pos),
+    Season = first(Season),
+    Switched_Teams = first(Switched_Teams),
+    days_injured = sum(days_injured, na.rm = TRUE),
+    st_days_injured = sum(st_days_injured, na.rm = TRUE),
+    injury_amount = n()
+  ) %>%
+  ungroup()
+
+# Create the day_healthy variable
+combined_data_21 <- combined_data_21 %>%
+  mutate(
+    days_healthy = 186 - days_injured
+  )
+
+
+##### 2022 Season - Just Players with 1 Team #####
+# data
+one_team_22 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project/One_Team_22.xlsx")
+
+# Taking out obs with IL_Retro_Date after end of Regular Season
+one_team_22$IL_Retro_Date <- as.Date(one_team_22$IL_Retro_Date)
+one_team_22 <- one_team_22 %>%
+  filter(IL_Retro_Date <= as.Date("2022-10-05"))
+
+# Creating start data variable
+one_team_22$IL_Retro_Date <- as.Date(one_team_22$IL_Retro_Date)
+one_team_22 <- one_team_22 %>%
+  mutate(start_date = if_else(IL_Retro_Date >= as.Date("2022-04-07"), 
+                              IL_Retro_Date, 
+                              as.Date("2022-04-07")))
+
+# Creating end data variable
+one_team_22$Return_Date <- as.Date(one_team_22$Return_Date)
+one_team_22 <- one_team_22 %>%
+  mutate(end_date = if_else(is.na(Return_Date) | Return_Date > as.Date("2022-10-05"), 
+                            as.Date("2022-10-06"), 
+                            Return_Date))
+
+# Creating days injured variable
+one_team_22 <- one_team_22 %>%
+  mutate(
+    days_injured = as.integer(end_date - start_date)
+  )
+
+# Spring training
+# ST start date
+one_team_22 <- one_team_22 %>%
+  mutate(st_start_date = if_else(IL_Retro_Date >= as.Date("2022-03-17"), 
+                                 IL_Retro_Date, 
+                                 as.Date("2022-03-17")))
+
+# ST end date
+one_team_22 <- one_team_22 %>%
+  mutate(st_end_date = if_else(is.na(Return_Date) | Return_Date > as.Date("2022-04-06"), 
+                               as.Date("2022-04-07"), 
+                               Return_Date))
+
+# ST days injured
+one_team_22 <- one_team_22 %>%
+  mutate(
+    st_days_injured = as.integer(st_end_date - st_start_date)
+  )
+
+# turning negative numbers to 0 for days injured
+one_team_22 <- one_team_22 %>%
+  mutate(st_days_injured = ifelse(st_days_injured < 0, 0, st_days_injured))
+
+# Condensing to just 1 obs per player and keeping just Name, Team, Pos, Season, Switched_Teams, days_injured
+# days_injured added together
+combined_data_22 <- one_team_22 %>%
+  group_by(Name, Team) %>%
+  summarise(
+    Pos = first(Pos),
+    Season = first(Season),
+    Switched_Teams = first(Switched_Teams),
+    days_injured = sum(days_injured, na.rm = TRUE),
+    st_days_injured = sum(st_days_injured, na.rm = TRUE),
+    injury_amount = n()
+  ) %>%
+  ungroup()
+
+# Create the day_healthy variable
+combined_data_22 <- combined_data_22 %>%
+  mutate(
+    days_healthy = 182 - days_injured
+  )
+
+##### 2023 Season - Just Players with 1 Team #####
+# data
+one_team_23 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project/One_Team_23.xlsx")
+
+# Taking out obs with IL_Retro_Date after end of Regular Season
+one_team_23$IL_Retro_Date <- as.Date(one_team_23$IL_Retro_Date)
+one_team_23 <- one_team_23 %>%
+  filter(IL_Retro_Date <= as.Date("2023-10-01"))
+
+# Creating start data variable
+one_team_23$IL_Retro_Date <- as.Date(one_team_23$IL_Retro_Date)
+one_team_23 <- one_team_23 %>%
+  mutate(start_date = if_else(IL_Retro_Date >= as.Date("2023-03-30"), 
+                              IL_Retro_Date, 
+                              as.Date("2023-03-30")))
+
+# Creating end data variable
+one_team_23$Return_Date <- as.Date(one_team_23$Return_Date)
+one_team_23 <- one_team_23 %>%
+  mutate(end_date = if_else(is.na(Return_Date) | Return_Date > as.Date("2023-10-01"), 
+                            as.Date("2023-10-02"), 
+                            Return_Date))
+
+# Creating days injured variable
+one_team_23 <- one_team_23 %>%
+  mutate(
+    days_injured = as.integer(end_date - start_date)
+  )
+
+# Spring Training
+# ST start date
+one_team_23 <- one_team_23 %>%
+  mutate(st_start_date = if_else(IL_Retro_Date >= as.Date("2023-02-24"), 
+                                 IL_Retro_Date, 
+                                 as.Date("2023-02-24")))
+
+#ST end date
+one_team_23 <- one_team_23 %>%
+  mutate(st_end_date = if_else(is.na(Return_Date) | Return_Date > as.Date("2023-03-28"), 
+                               as.Date("2023-03-29"), 
+                               Return_Date))
+
+# ST days injured
+one_team_23 <- one_team_23 %>%
+  mutate(
+    st_days_injured = as.integer(st_end_date - st_start_date)
+  )
+
+# turning negative numbers to 0 for days injured
+one_team_23 <- one_team_23 %>%
+  mutate(st_days_injured = ifelse(st_days_injured < 0, 0, st_days_injured))
+
+# Condensing to just 1 obs per player and keeping just Name, Team, Pos, Season, Switched_Teams, days_injured
+# days_injured added together
+combined_data_23 <- one_team_23 %>%
+  group_by(Name, Team) %>%
+  summarise(
+    Pos = first(Pos),
+    Season = first(Season),
+    Switched_Teams = first(Switched_Teams),
+    days_injured = sum(days_injured, na.rm = TRUE),
+    st_days_injured = sum(st_days_injured, na.rm = TRUE),
+    injury_amount = n()
+  ) %>%
+  ungroup()
+
+# Create the day_healthy variable
+combined_data_23 <- combined_data_23 %>%
+  mutate(
+    days_healthy = 186 - days_injured
+  )
+
+##### 2021 Season WAR Data #####
+# data
+WAR_21 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project/WAR_data_21.xlsx")
+
+# Merging the datasets based on 'Name' and 'Team'
+merged_data_21 <- merge(combined_data_21, WAR_21, by = c("Name", "Team"), all.x = TRUE)
+
+# Checking for names that appear twice so I can manually delete pos players pitching WAR
+duplicates <- merged_data_21 %>%
+  group_by(Name) %>%
+  filter(n() > 1) %>%
+  ungroup()
+
+print(duplicates)
+
+# Checking to see if all missing WARs are supposed to be missing
+missing_war_21 <- merged_data_21 %>% filter(is.na(WAR))
+
+##### 2022 Season WAR Data #####
+# data
+WAR_22 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project/WAR_data_22.xlsx")
+
+# Merging the datasets based on 'Name' and 'Team'
+merged_data_22 <- merge(combined_data_22, WAR_22, by = c("Name", "Team"), all.x = TRUE)
+
+# Checking for names that appear twice so I can manually delete pos players pitching WAR
+duplicates <- merged_data_22 %>%
+  group_by(Name) %>%
+  filter(n() > 1) %>%
+  ungroup()
+
+# Print the duplicate observations
+print(duplicates)
+
+
+# Checking to see if all missing WARs are supposed to be missing
+missing_war_22 <- merged_data_22 %>% filter(is.na(WAR))
+
+##### 2023 Season WAR Data #####
+# data
+WAR_23 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project/WAR_data_23.xlsx")
+
+# Merging the datasets based on 'Name' and 'Team'
+merged_data_23 <- merge(combined_data_23, WAR_23, by = c("Name", "Team"), all.x = TRUE)
+
+# Checking for names that appear twice so I can manually delete pos players pitching WAR
+duplicates <- merged_data_23 %>%
+  group_by(Name) %>%
+  filter(n() > 1) %>%
+  ungroup()
+
+# Print the duplicate observations
+print(duplicates)
+
+# Checking to see if all missing WARs are supposed to be missing
+missing_war_23 <- merged_data_23 %>% filter(is.na(WAR))
+
+# Identify the row where Player is "Shohei Ohtani" and WAR is 2.4
+row_index <- which(merged_data_23$Name == "Shohei Ohtani" & merged_data_23$WAR == 2.4)
+
+# Change the Pos for that specific row to "SP"
+merged_data_23$Pos[row_index] <- "SP"
+
+# Importing Data for players who played for multiple teams
+more_teams_21 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project/more_teams_21.xlsx")
+more_teams_22 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project/more_teams_22.xlsx")
+more_teams_23 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project/more_teams_23.xlsx")
+
+# deleting total_days column
+more_teams_21 <- subset(more_teams_21, select = -total_days)
+more_teams_22 <- subset(more_teams_22, select = -total_days)
+more_teams_23 <- subset(more_teams_23, select = -total_days)
+
+##### Combining all the data into one final dataset
+final_injury_data <- bind_rows(merged_data_21, merged_data_22, merged_data_23,
+                           more_teams_21, more_teams_22, more_teams_23)
+
+##### Creating WAR/days_healthy, pitcher(binary), and league variables
+freq_table <- table(final_injury_data$Pos)
+print(freq_table)
+
+final_injury_data <- final_injury_data %>%
+  mutate(pitcher = if_else(Pos %in% c("RP", "RP/SP", "SP", "SP/RP"), 1, 0))
+
+freq_table1 <- table(final_injury_data$pitcher)
+print(freq_table1)
+
+final_injury_data$WAR_per_days_healthy <- final_injury_data$WAR / final_injury_data$days_healthy
+
+freq_table2 <- table(final_injury_data$Team)
+print(freq_table2)
+
+nl_teams <- c("ATL", "PHI", "NYM", "MIA", "WSH", "MIL", "STL", "ARI", 
+              "CHC", "CIN", "COL", "LAD", "PIT", "SDP", "SFG")
+
+final_injury_data$league <- ifelse(final_injury_data$Team %in% nl_teams, "NL", "AL")
+
+freq_table3 <- table(final_injury_data$league)
+print(freq_table3)
+
+# deleting 4 obs with injuries before start of season
+final_injury_data <- final_injury_data[final_injury_data$days_injured >= 0, ]
+
+# deleting missing WAR values
+final_injury_data <- final_injury_data %>%
+  filter(!is.na(WAR_per_days_healthy))
+
+# Removing unneeded variables
+final_injury_data1 <- subset(final_injury_data, select = -c(Pos, days_healthy, WAR))
+
+# Wins data
+MLB_Wins <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Wins.xlsx")
+
+# Merging Wins data
+final_injury_data2 <- merge(final_injury_data1, MLB_Wins, by = c("Team", "Season"), all.x = TRUE)
+
+# Check to make sure everything merged
+missing_wins <- sum(is.na(final_injury_data2$Wins))
+print(missing_wins)
+
+# Create the new variable st_injured
+final_injury_data2 <- final_injury_data2 %>%
+  mutate(st_injured = ifelse(st_days_injured == 0, 0, 1))
+
+freq_table(final_injury_data2$st_injured)
+
+# Create the new variable injured_more_than_once
+final_injury_data2 <- final_injury_data2 %>%
+  mutate(injured_more_than_once = ifelse(injury_amount == 1, 0, 1))
+
+freq_table(final_injury_data2$injured_more_than_once)
+
+# removing unneeded variables
+final_injury_data2 <- subset(final_injury_data2, select = -c(Name, Team, st_days_injured, injury_amount))
+#final_injury_data2 <- subset(final_injury_data2, select = -c(st_injured, Switched_Teams))
+
+# Freq tables for other binary variables
+freq_table(final_injury_data2$league)
+freq_table(final_injury_data2$pitcher)
+freq_table(final_injury_data2$Switched_Teams)
+
+# Summary Table
+describe(final_injury_data2[,c(3,5,9)])
+
+
+# Histograms
+hist(final_injury_data2$days_injured, main = "Figure 1: Histogram of Days Injured", xlab = "Days")
+hist(final_injury_data2$WAR_per_days_healthy,  main = "Figure 2: Histogram of WAR per Days Healthy", xlab = "WAR")
+hist(final_injury_data2$Wins, main = "Figure 3: Histogram of Wins", xlab = "Wins")
+
+# Boxplots
+boxplot(final_injury_data2$days_injured)
+boxplot(final_injury_data2$WAR_per_days_healthy)
+boxplot(final_injury_data2$Wins)
+
+# Correlation matrix
+Matrix_vars <- final_injury_data2[c("Wins", "WAR_per_days_healthy", "days_injured", "pitcher", "injured_more_than_once")]
+cor_matrix <- cor(Matrix_vars)
+print(cor_matrix)
+
+# Scatterplot Matrix
+pairs(Matrix_vars)
+
+##################################################################################
+# MODEL
+# MASS package
+library(MASS)
+
+# negative binomial regression model
+model_neg_bin <- glm.nb(Wins ~ WAR_per_days_healthy + days_injured + league + pitcher + injured_more_than_once, 
+                        data = final_injury_data2)
+summary(model_neg_bin)
+exp(coef(model_neg_bin))
+
+##### SECOND SET OF CODE (FOR SECOND ANALYSIS AND ADDITIONAL DATASTEPS)
+##### 2024 Season - Just Players with 1 Team #####
+# data
+one_team_24 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project_Fall_24/One_Team_24.xlsx")
+
+# Taking out obs with IL_Retro_Date after end of Regular Season
+one_team_24$IL_Retro_Date <- as.Date(one_team_24$IL_Retro_Date)
+one_team_24 <- one_team_24 %>%
+  filter(IL_Retro_Date <= as.Date("2024-09-29"))
+
+# Creating start data variable
+one_team_24$IL_Retro_Date <- as.Date(one_team_24$IL_Retro_Date)
+one_team_24 <- one_team_24 %>%
+  mutate(start_date = if_else(IL_Retro_Date >= as.Date("2024-03-28"), 
+                              IL_Retro_Date, 
+                              as.Date("2024-03-28")))
+
+# Creating end data variable
+one_team_24$Return_Date <- as.Date(one_team_24$Return_Date)
+one_team_24 <- one_team_24 %>%
+  mutate(end_date = if_else(is.na(Return_Date) | Return_Date > as.Date("2024-09-29"), 
+                            as.Date("2024-09-30"), 
+                            Return_Date))
+
+# Creating days injured variable
+one_team_24 <- one_team_24 %>%
+  mutate(
+    days_injured = as.integer(end_date - start_date)
+  )
+
+# Condensing to just 1 obs per player and keeping just Name, Team, Pos, Season, Switched_Teams, days_injured
+# days_injured added together
+combined_data_24 <- one_team_24 %>%
+  group_by(Name, Team) %>%
+  summarise(
+    Pos = first(Pos),
+    Season = first(Season),
+    Switched_Teams = first(Switched_Teams),
+    days_injured = sum(days_injured, na.rm = TRUE),
+    injury_amount = n()
+  ) %>%
+  ungroup()
+
+# Create the day_healthy variable
+combined_data_24 <- combined_data_24 %>%
+  mutate(
+    days_healthy = 186 - days_injured
+  )
+
+##### 2021 #####
+freq_table <- table(merged_data_21$Pos)
+print(freq_table)
+
+# Remove players with missing WAR aka ones who did not play at all
+played_21 <- merged_data_21 %>%
+  filter(!is.na(WAR))
+
+# Split the data into two datasets: one for pitchers and one for position players
+pitchers_21 <- played_21 %>%
+  filter(Pos %in% c("RP", "RP/SP", "SP", "SP/RP"))
+
+position_players_21 <- played_21 %>%
+  filter(!Pos %in% c("RP", "RP/SP", "SP", "SP/RP"))
+
+##### 2022 #####
+freq_table <- table(merged_data_22$Pos)
+print(freq_table)
+
+# Remove players with missing WAR aka ones who did not play at all
+played_22 <- merged_data_22 %>%
+  filter(!is.na(WAR))
+
+# Fixing Data Mistakes
+played_22 <- played_22 %>%
+  mutate(Pos = ifelse(Name == "Drew Smyly", "SP", Pos))
+played_22 <- played_22 %>%
+  mutate(Pos = ifelse(Name == "Sam Howard", "RP", Pos))
+
+# Split the data into two datasets: one for pitchers and one for position players
+pitchers_22 <- played_22 %>%
+  filter(Pos %in% c("RP", "RP/SP", "SP", "SP/RP"))
+
+position_players_22 <- played_22 %>%
+  filter(!Pos %in% c("RP", "RP/SP", "SP", "SP/RP"))
+
+##### 2023 #####
+freq_table <- table(merged_data_23$Pos)
+print(freq_table)
+
+# Remove players with missing WAR aka ones who did not play at all
+played_23 <- merged_data_23 %>%
+  filter(!is.na(WAR))
+
+# Fixing Data Mistake
+played_23 <- played_23 %>%
+  mutate(Pos = ifelse(Name == "Griffin Canning", "SP", Pos))
+
+# Split the data into two datasets: one for pitchers and one for position players
+pitchers_23 <- played_23 %>%
+  filter(Pos %in% c("RP", "RP/SP", "SP", "SP/RP"))
+
+position_players_23 <- played_23 %>%
+  filter(!Pos %in% c("RP", "RP/SP", "SP", "SP/RP"))
+
+##### 2024 #####
+freq_table <- table(combined_data_24$Pos)
+print(freq_table)
+
+# Remove players who did not play at all
+played_24 <- combined_data_24 %>% filter(days_healthy != 0)
+
+# Fixing Data Mistake
+played_24 <- played_24 %>%
+  mutate(Pos = ifelse(Name == "Josh Rogers", "RP", Pos))
+
+# Split the data into two datasets: one for pitchers and one for position players
+pitchers_24 <- played_24 %>%
+  filter(Pos %in% c("RP", "RP/SP", "SP", "SP/RP"))
+
+position_players_24 <- played_24 %>%
+  filter(!Pos %in% c("RP", "RP/SP", "SP", "SP/RP"))
+
+##### 2021 Season Pos Players Data #####
+# data
+batting_stats_21 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project_Data_Updated/MLB_Injury_Project/Batting_Stats_21.xlsx")
+# deleting WAR column
+batting_stats_21 <- subset(batting_stats_21, select = -WAR)
+
+# Merging the datasets based on 'Name' and 'Team'
+merged_pos_21 <- merge(position_players_21, batting_stats_21, by = c("Name", "Team"), all.x = TRUE)
+
+# removing 2 obs with injuries before start of season
+merged_pos_21 <- merged_pos_21[merged_pos_21$days_injured >= 0, ]
+
+# Checking to see if there are any missing values
+colSums(is.na(merged_pos_21))
+
+merged_pos_21 <- merged_pos_21 %>% select(-xwOBA, -wOBA, -ISO, -SB, -R, -HR, -PA, -G, -`wRC+`, -st_days_injured)
+
+
+##### 2022 Season Pos Players Data #####
+# data
+batting_stats_22 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project_Data_Updated/MLB_Injury_Project/Batting_Stats_22.xlsx")
+# deleting WAR column
+batting_stats_22 <- subset(batting_stats_22, select = -WAR)
+
+# Merging the datasets based on 'Name' and 'Team'
+merged_pos_22 <- merge(position_players_22, batting_stats_22, by = c("Name", "Team"), all.x = TRUE)
+
+# Checking to see if there are any missing values
+colSums(is.na(merged_pos_22))
+
+merged_pos_22 <- merged_pos_22 %>% select(-xwOBA, -wOBA, -ISO, -SB, -R, -HR, -PA, -G, -`wRC+`, -st_days_injured)
+
+##### 2023 Season Pos Players Data #####
+# data
+batting_stats_23 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project_Data_Updated/MLB_Injury_Project/Batting_Stats_23.xlsx")
+# deleting WAR column
+batting_stats_23 <- subset(batting_stats_23, select = -WAR)
+
+# Merging the datasets based on 'Name' and 'Team'
+merged_pos_23 <- merge(position_players_23, batting_stats_23, by = c("Name", "Team"), all.x = TRUE)
+
+# Checking to see if there are any missing values
+colSums(is.na(merged_pos_23))
+
+merged_pos_23 <- merged_pos_23 %>% select(-xwOBA, -wOBA, -ISO, -SB, -R, -HR, -PA, -G, -`wRC+`, -st_days_injured)
+
+##### 2024 Season Pos Players Data #####
+# data
+batting_stats_24 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project_Fall_24/Batting_Stats_24.xlsx")
+
+# Merging the datasets based on 'Name' and 'Team'
+merged_pos_24 <- merge(position_players_24, batting_stats_24, by = c("Name", "Team"), all.x = TRUE)
+
+merged_pos_24 <- merged_pos_24 %>%
+  filter(!(Name %in% c('Brennen Davis', 'Rodolfo Castro', 'Tucupita Marcano')))
+
+# Checking to see if there are any missing values
+colSums(is.na(merged_pos_24))
+
+merged_pos_24 <- merged_pos_24 %>% select(-xwOBA, -wOBA, -ISO, -SB, -R, -HR, -PA, -G, -`wRC+`)
+
+##### 2021 Season Pitchers Data #####
+# data
+pitching_stats_21 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project_Data_Updated/MLB_Injury_Project/Pitching_Stats_21.xlsx")
+
+# Merging the datasets based on 'Name' and 'Team'
+merged_pitchers_21 <- merge(pitchers_21, pitching_stats_21, by = c("Name", "Team"), all.x = TRUE)
+
+# removing 2 obs with injuries before start of season
+merged_pitchers_21 <- merged_pitchers_21[merged_pitchers_21$days_injured >= 0, ]
+
+# Checking to see if there are any missing values
+colSums(is.na(merged_pitchers_21))
+
+names(merged_pitchers_21)[names(merged_pitchers_21) == "vFA (pi)"] <- "vFA"
+
+##### 2022 Season Pitchers Data #####
+# data
+pitching_stats_22 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project_Data_Updated/MLB_Injury_Project/Pitching_Stats_22.xlsx")
+
+# Merging the datasets based on 'Name' and 'Team'
+merged_pitchers_22 <- merge(pitchers_22, pitching_stats_22, by = c("Name", "Team"), all.x = TRUE)
+
+# Checking to see if there are any missing values
+colSums(is.na(merged_pitchers_22))
+
+names(merged_pitchers_22)[names(merged_pitchers_22) == "vFA (pi)"] <- "vFA"
+
+##### 2023 Season Pitchers Data #####
+# data
+pitching_stats_23 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project_Data_Updated/MLB_Injury_Project/Pitching_Stats_23.xlsx")
+
+# Merging the datasets based on 'Name' and 'Team'
+merged_pitchers_23 <- merge(pitchers_23, pitching_stats_23, by = c("Name", "Team"), all.x = TRUE)
+
+# Checking to see if there are any missing values
+colSums(is.na(merged_pitchers_23))
+
+names(merged_pitchers_23)[names(merged_pitchers_23) == "vFA (pi)"] <- "vFA"
+
+##### 2024 Season Pitchers Data #####
+# data
+pitching_stats_24 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project_Fall_24/Pitching_Stats_24.xlsx")
+
+# Merging the datasets based on 'Name' and 'Team'
+merged_pitchers_24 <- merge(pitchers_24, pitching_stats_24, by = c("Name", "Team"), all.x = TRUE)
+
+# Checking to see if there are any missing values
+colSums(is.na(merged_pitchers_24))
+
+# deleting missing WAR values
+merged_pitchers_24 <- merged_pitchers_24 %>%
+  filter(!is.na(WAR))
+
+names(merged_pitchers_24)[names(merged_pitchers_24) == "vFA (pi)"] <- "vFA"
+
+##### IMPORTING MORE THAN ONE TEAM DATA #####
+more_pitchers_21 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project_Fall_24/more_teams_pitchers_21.xlsx") 
+more_pitchers_22 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project_Fall_24/more_teams_pitchers_22.xlsx") 
+more_pitchers_23 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project_Fall_24/more_teams_pitchers_23.xlsx") 
+more_pitchers_24 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project_Fall_24/more_teams_pitchers_24.xlsx") 
+more_pos_21 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project_Fall_24/more_teams_position_players_21.xlsx") 
+more_pos_22 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project_Fall_24/more_teams_position_players_22.xlsx") 
+more_pos_23 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project_Fall_24/more_teams_position_players_23.xlsx") 
+more_pos_24 <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project_Fall_24/more_teams_position_players_24.xlsx") 
+
+##### Combining all the data into one final dataset
+final_pos <- bind_rows(merged_pos_21, merged_pos_22, merged_pos_23, merged_pos_24, 
+                               more_pos_21, more_pos_22, more_pos_23, more_pos_24)
+
+final_pos$WAR_per_days_healthy <- final_pos$WAR / final_pos$days_healthy
+final_pos$RBI_per_days_healthy <- final_pos$RBI / final_pos$days_healthy
+final_pos$Off_per_days_healthy <- final_pos$Off / final_pos$days_healthy
+final_pos$BsR_per_days_healthy <- final_pos$BsR / final_pos$days_healthy
+final_pos$Def_per_days_healthy <- final_pos$Def / final_pos$days_healthy
+
+nl_teams <- c("ATL", "PHI", "NYM", "MIA", "WSH", "MIL", "STL", "ARI", 
+              "CHC", "CIN", "COL", "LAD", "PIT", "SDP", "SFG")
+
+final_pos$league <- ifelse(final_pos$Team %in% nl_teams, "NL", "AL")
+
+freq_table <- table(final_pos$league)
+print(freq_table)
+
+# Removing unneeded variables
+final_pos <- subset(final_pos, select = -c(days_healthy, WAR, RBI, BsR, Off, Def, total_days, st_days_injured))
+
+# Checking to see if there are any missing values
+colSums(is.na(final_pos))
+
+##### Combining all the data into one final dataset
+final_pitchers <- bind_rows(merged_pitchers_21, merged_pitchers_22, merged_pitchers_23, merged_pitchers_24, 
+                       more_pitchers_21, more_pitchers_22, more_pitchers_23, more_pitchers_24)
+# Removing unneeded variables
+final_pitchers <- subset(final_pitchers, select = -c(SV, G, GS, `GB%`, `HR/FB`, `BB/9`, xERA, FIP, xFIP, st_days_injured, total_days))
+
+final_pitchers$WAR_per_days_healthy <- final_pitchers$WAR / final_pitchers$days_healthy
+final_pitchers$Wins_per_days_healthy <- final_pitchers$W / final_pitchers$days_healthy
+final_pitchers$Losses_per_days_healthy <- final_pitchers$L / final_pitchers$days_healthy
+
+nl_teams <- c("ATL", "PHI", "NYM", "MIA", "WSH", "MIL", "STL", "ARI", 
+              "CHC", "CIN", "COL", "LAD", "PIT", "SDP", "SFG")
+
+final_pitchers$league <- ifelse(final_pitchers$Team %in% nl_teams, "NL", "AL")
+
+freq_table <- table(final_pitchers$league)
+print(freq_table)
+
+# Removing unneeded variables
+final_pitchers <- subset(final_pitchers, select = -c(days_healthy, WAR, W, L))
+
+# Checking to see if there are any missing values
+colSums(is.na(final_pitchers))
+
+####### Merging Playoff Variable
+MLB_Outcome <- readxl::read_xlsx("C:/Users/andre/OneDrive/Documents/MLB_Injury_Project_Fall_24/MLB_team_outcome.xlsx")
+
+complete_position_players <- merge(final_pos, MLB_Outcome, by = c("Team", "Season"), all.x = TRUE)
+
+# Check to make sure everything merged
+colSums(is.na(complete_position_players))
+
+complete_pitchers <- merge(final_pitchers, MLB_Outcome, by = c("Team", "Season"), all.x = TRUE)
+
+# Check to make sure everything merged
+colSums(is.na(complete_pitchers))
+
+########## POSITION PLAYERS ANALYSIS ##########
+# Create the new variable injured_more_than_once
+complete_position_players <- complete_position_players %>%
+  mutate(injured_more_than_once = ifelse(injury_amount == 1, 0, 1))
+
+# Freq tables for other binary variables
+freq_table(complete_position_players$league)
+freq_table(complete_position_players$Playoffs)
+freq_table(complete_position_players$Switched_Teams)
+freq_table(complete_position_players$injured_more_than_once)
+
+# Removing unneeded variables
+complete_position_players <- subset(complete_position_players, select = -c(Season, Switched_Teams, Team, Name, Pos, injury_amount, Wins))
+
+complete_position_players1 <- subset(complete_position_players, select = -c(Off_per_days_healthy))
+
+model_position1 <- glm(Playoffs ~ . + days_injured:(. -days_injured), data = complete_position_players1, family = binomial)
+summary(model_position1)
+
+# Stepwise selection
+stepwise_model_position_players <- step(model_position1, direction = "both")
+summary(stepwise_model_position_players)
+
+
+model_main_effects <- glm(Playoffs ~ `K%` + BABIP + AVG + OBP + WAR_per_days_healthy + days_injured 
+                            + league + injured_more_than_once, data = complete_position_players1, family = binomial)
+
+# Calculate VIF values
+vif_values_pos <- vif(model_main_effects)
+print(vif_values_pos)
+
+model_final_position_players <- glm(Playoffs ~ `K%` + BABIP + WAR_per_days_healthy + days_injured 
+                                     + injured_more_than_once
+                              + days_injured:(injured_more_than_once), 
+                            data = complete_position_players1, family = binomial)
+summary(model_final_position_players)
+
+# Extract coefficients and convert to odds ratios
+odds_ratios_pos <- exp(coef(model_final_position_players))
+print(odds_ratios_pos)
+
+model_main_effects <- glm(Playoffs ~  days_injured + `K%` + BABIP + WAR_per_days_healthy + injured_more_than_once , data = complete_position_players, family = binomial)
+
+# Calculate VIF values
+vif_values_p <- vif(model_main_effects)
+print(vif_values_p)
+
+# probabilities for the logistic model
+probabilities <- predict(model_final_position_players, type = "response")
+
+# ROC curve
+roc_curve <- roc(complete_position_players1$Playoffs, probabilities)
+plot(roc_curve, main = "ROC Curve", col = "blue", lwd = 2)
+auc_value <- auc(roc_curve)
+legend("bottomright", legend = paste("AUC =", round(auc_value, 2)), col = "blue", lwd = 2)
+
+########## Pitchers ANALYSIS ##########
+# Create the new variable injured_more_than_once
+complete_pitchers <- complete_pitchers %>%
+  mutate(injured_more_than_once = ifelse(injury_amount == 1, 0, 1))
+
+# Freq tables for other binary variables
+freq_table(complete_pitchers$league)
+freq_table(complete_pitchers$Playoffs)
+freq_table(complete_pitchers$Switched_Teams)
+freq_table(complete_pitchers$injured_more_than_once)
+
+# Removing unneeded variables
+complete_pitchers <- subset(complete_pitchers, select = -c(Season, Switched_Teams, Team, Name, Pos, injury_amount, Wins))
+complete_pitchers1 <- subset(complete_pitchers, select = -c(vFA))
+
+model_p1 <- glm(Playoffs ~ . + days_injured:(. -days_injured), data = complete_pitchers1, family = binomial)
+summary(model_p1)
+
+# Stepwise selection
+stepwise_model_pitchers <- step(model_p1, direction = "both")
+summary(stepwise_model_pitchers)
+
+model_main_effects <- glm(Playoffs ~ IP + `K/9` + `LOB%` + WAR_per_days_healthy + days_injured + Wins_per_days_healthy
+                          + Losses_per_days_healthy + league + injured_more_than_once, data = complete_pitchers1, family = binomial)
+
+# Calculate VIF values
+vif_values_p <- vif(model_main_effects)
+print(vif_values_p)
+
+model_final_pitchers <- glm(Playoffs ~ league  + WAR_per_days_healthy + Losses_per_days_healthy + 
+                              Wins_per_days_healthy + days_injured + days_injured: ( Losses_per_days_healthy + Wins_per_days_healthy), 
+                              data = complete_pitchers1, family = binomial)
+summary(model_final_pitchers)
+
+# Extract coefficients and convert to odds ratios
+odds_ratios_p <- exp(coef(model_final_pitchers))
+print(odds_ratios_p)
+
+model_main_effects <- glm(Playoffs ~  WAR_per_days_healthy + days_injured + Wins_per_days_healthy
+                          + Losses_per_days_healthy + league, data = complete_pitchers1, family = binomial)
+
+# Calculate VIF values
+vif_values_p <- vif(model_main_effects)
+print(vif_values_p)
+
+# probabilities for the logistic model
+probabilities <- predict(model_final_pitchers, type = "response")
+
+# ROC curve
+roc_curve <- roc(complete_pitchers1$Playoffs, probabilities)
+plot(roc_curve, main = "ROC Curve", col = "blue", lwd = 2)
+auc_value <- auc(roc_curve)
+legend("bottomright", legend = paste("AUC =", round(auc_value, 2)), col = "blue", lwd = 2)
+
+
+
+
+
+
+
